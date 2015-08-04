@@ -1,0 +1,17 @@
+{
+  "name": "Nix",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "convert-source-map": "*",
+    "ejs": "~1.0.0",
+    "glob": "*",
+    "haml-coffee": "*",
+    "jade": "*",
+    "stylus": "*",
+    "less": "*",
+    "requirejs": "*",
+    "yamljs": "*"
+  }
+}
+
