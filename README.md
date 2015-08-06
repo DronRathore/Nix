@@ -74,6 +74,28 @@ Basically compile things within anything and so on.
 - Stylus
 - CSS
 
+##Nix Options
+
+```javascript
+/**
+ * @param {[object]}
+ * @param {Function}
+ * Options: 
+ *  source: path to source directory
+ *  destination: destination where to save
+ *  compilers: [Array] nixCompilers
+ *  options: {object} to be passed to compilers
+ *  hash: boolean
+ *  gzip: boolean
+ *  async: boolean to compile files in async
+ *  cdnBase: String to be used as prefixed in manifest and paths
+ *  gzipOriginal: boolean Whether to gzip original file or create
+ *                a .gz file
+ *  
+ * Callback: Function(optional)
+ */
+function Nix(options, callback){ ... }
+```
 
 ## CSS Helpers
 
