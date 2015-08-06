@@ -6,8 +6,116 @@ var fs	 = require("fs");
 var rang = require("./lib/string");
 var crypto = require("crypto");
 
+/**
+ * @param {[object]}
+ * @param {Function}
+ * Options: 
+ * 	source: path to source directory
+ * 	destination: destination where to save
+ * 	compilers: [Array] nixCompilers
+ * 	options: {object} to be passed to compilers
+ * 	hash: boolean
+ * 	gzip: boolean
+ * 	async: boolean to compile files in async
+ * 	cdnBase: String to be used as prefixed in manifest and paths
+ *  gzipOriginal: boolean Whether to gzip original file or create
+ *                a .gz file
+ *  
+ * Callback: Function(optional)
+ */
 function Nix(options, callback){
-	var async = false, files, compiledWriters = [], saving = false, compilerOptions = {}, doesHash = false, doesGzip = false, manifest, basePath, compilers = [], patterns = [], extensions = [], doneFiles = 0, errorFiles = 0, destination, source;
+	/*
+		Async file compilation flag
+	 */
+	var async = false,
+	
+	/*
+		List of files to compile
+	 */
+	files,
+
+	/*
+		CDN path option to prefix manifest urls
+	 */
+	cdnBase = "",
+
+	/*
+		Options that will be passed to compilers
+	 */
+	compilerOptions = {},
+
+	/*
+		To generate hash suffixed files
+		pass manifest file option too to save these paths
+	 */
+	doesHash = false,
+
+	/*
+		To enable gzip compression of files
+	 */
+	doesGzip = false,
+
+	/*
+		Manifest Object extracted from json or
+		the manifest object passed in to Nix
+	 */
+	manifest,
+	/*
+		baseDirectory of project
+		defaults to current dir
+	 */
+	basePath,
+	/*
+		List of compilers
+	 */
+	compilers = [],
+	
+	/*
+		Patterns list extracted from compilers
+	 */
+	patterns = [],
+	
+	/*
+		Extensions registered by compilers
+	 */
+	extensions = [],
+
+	/*
+		Sad counters :(
+	 */
+	doneFiles = 0, 
+	errorFiles = 0,
+
+	/*
+		destination folder to save file
+	 */
+	destination,
+
+	/*
+		source folder to look for files
+	 */
+	source,
+
+	/*
+		Path of manifest file
+	 */
+	_manifestFile = null,
+
+	/*
+		noop.. *shrug*
+	 */
+	noop = function(){},
+	/*
+		Callback default noop
+	 */
+	cb = noop,
+
+	/*
+		gzipOriginal File or not
+	 */
+	gzipOriginal = false;
+
+
 	
 	/*
 		@usage: Returns the last extension of file
@@ -230,15 +338,41 @@ function Nix(options, callback){
 		})
 	}
 
-	var saveCompiledFiles = function(file){
+	var saveCompiledFiles = function(file, manifest){
 		if (doesHash){
 			var hash = crypto.createHash("md5");
 			hash = hash.update(file.content)
 			hash = hash.digest('hex');
+			var key = file.path.replace(path.resolve(destination), "");
+			manifest[key] = cdnBase + key.substr(0, key.lastIndexOf("."))+ "-" + hash + key.substr(key.lastIndexOf(".")-1, key.length);
+		}
+		if (doesGzip){
+			try{
+				var gzipData = zlib.gzipSync(file.content, {level: 9})
+			} catch(e){
+				console.log("Failed to Gzip", file.path, e)
+			}
 		}
 		var writer = fs.createWriteStream(file.path, "w+");
+		if (!gzipOriginal){
+			var _gzipWriter = fs.createWriteStream(file.path+".gz", "w+")
+		} else {
+			file.content = gzipData;
+		}
 		writer.write(file.content, function(err, data){
+			if (err){
+				console.log("Couldn't save", file.path, err)
+				return process.exit(-1);
+			}
 			writer.destroy();
+			if (!gzipOriginal && doesGzip){
+				_gzipWriter.write(gzipData, function(err, data){
+					_gzipWriter.destroy()
+					if (err){
+						console.log("Cannot save gzip of", file.path)
+					}
+				})
+			}
 			_processNextFile();
 		});
 	}
@@ -248,11 +382,17 @@ function Nix(options, callback){
 	var getManifest = function(_manifest){
 		if (typeof _manifest == 'string'){
 			// we have a path for manifest file
-			manifest = require(path.resolve(basePath, _manifest))
+			_manifestFile = path.resolve(basePath, _manifest);
+			if (fs.existsSync(_manifestFile)){
+				manifest = require(_manifestFile);
+			} else {
+				manifest = {};
+			}
 		} else {
 			// did you just passed the manifest file to me? Kewl!
-			manifest = _manifest;
+			manifest = typeof _manifest == "object"?_manifest: {};
 		}
+		return manifest;
 	}
 
 	/*
@@ -271,6 +411,18 @@ function Nix(options, callback){
 		}
 	}
 
+	/*
+		@usage: Save the manifest file
+	 */
+	var saveManifest = function(){
+		if (_manifestFile){
+			var writer = fs.createWriteStream(_manifestFile)
+			writer.write(JSON.stringify(manifest))
+			writer.on("finish", function(){
+				writer.destroy();
+			})
+		}
+	}
 	/*
 		@usage: A color coded console logger
 	*/
@@ -319,9 +471,13 @@ function Nix(options, callback){
 	manifest = options.manifest? getManifest(options.manifest): null;
 
 	// Ninja Options!
+	cdnBase	 = options.cdnBase || cdnBase;
 	doesGzip = doesGzip || options.gzip;
 	doesHash = doesHash || options.hash;
 	async	 = async    || options.async;
+	cb		 = callback || noop;
+	gzipOriginal = options.gzipOriginal || gzipOriginal;
+
 	if ((files = globFilesFromPatterns(options.source, basePath)).length === 0){
 		return endLog(0, 0, "Black hole passed to me!");
 	}
@@ -401,7 +557,7 @@ function Nix(options, callback){
 			var _fpath = _destination+CompiledFile.path.replace(_source, "");
 			nixEnsureDirectories(_fpath);
 			CompiledFile.path = _fpath;
-			return saveCompiledFiles(CompiledFile);
+			return saveCompiledFiles(CompiledFile, manifest);
 		} else {
 			console.log(String.concat("Skipped", file, "as no matching compiler for", ext, "extensions").red().white())
 			_processNextFile()
@@ -410,8 +566,10 @@ function Nix(options, callback){
 
 	var _processNextFile = function(){
 		var file = files.shift();
-		if (!file)
-			return false;
+		if (!file){
+			saveManifest()
+			return cb(manifest);
+		}
 		// this is dead end, no turning back
 		// we have to fight the war or die trying!
 		try{
