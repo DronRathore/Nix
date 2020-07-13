@@ -4,7 +4,7 @@
   "private": true,
   "dependencies": {
     "convert-source-map": "*",
-    "ejs": "~1.0.0",
+    "ejs": "~3.1.3",
     "glob": "*",
     "haml-coffee": "*",
     "jade": "*",
